@@ -25,13 +25,33 @@ Ohne Mikrofon zum Ausprobieren: **DEMO-BEAT** (128 BPM, mit Breakdown und Drop a
 | `1` `2` `3` | Szene wählen | `←` `→` | Szene vor/zurück |
 | `Leertaste` | FX-Burst (manueller Drop) | `B` | Blackout |
 | `T` | Tap-Tempo (≥ 3× tippen) | `L` | BPM sperren/freigeben |
-| `,` `.` | Latenz −/+ 10 ms | `+` `-` | Kick empfindlicher/weniger |
+| `,` `.` | Sync: Bild früher/später (10 ms, halten geht) | `+` `-` | Kick empfindlicher/weniger |
 | `S` | Strobe an/aus | `G` | Glitch aus/dosiert/heftig |
 | `R` | Auflösung Auto/100/75/50 % | `A` | Auto-Szenenwechsel (alle 32 Takte) |
+| `W` | Webcam-Einblendungen an/aus | `V` | Webcam jetzt ein/aus |
 | `M` | nächstes Mikrofon | `D` | Demo-Beat an/aus |
-| `F` / Doppelklick | Vollbild | `H` | Overlay/Hilfe |
+| `C` | Control-Panel (Maus) | `H` | Overlay/Hilfe |
+| `F` / Doppelklick | Vollbild | | |
 
-Einstellungen (Strobe, Glitch, Latenz, Mikrofon …) werden im Browser gespeichert.
+Einstellungen (Strobe, Glitch, Sync, Webcam, Mikrofon …) werden im Browser gespeichert.
+
+### Control-Panel (`C`)
+
+- **SYNC-Fader** (−500 … +500 ms): Plus heißt, das Bild kommt später, Minus heißt, das Bild kommt früher.
+  Daneben blinkt eine **Beat-Lampe** auf dem Beat, so wie das Bild ihn sieht. Den Fader so lange schieben, bis die
+  Lampe genau mit der Kick blinkt, die du hörst. `0` setzt zurück.
+  - Typisch: Der Beamer hängt hinterher (30–100 ms), dann ins Minus schieben.
+  - Bei Plus werden auch Bass/Pegel/Kick-Reaktionen verzögert, nicht nur das Beat-Raster.
+- **WEBCAM**: Einblendungen an/aus, **JETZT EIN/AUS** blendet sofort ein (oder aus). Der Status zeigt, wann die
+  nächste Einblendung kommt.
+
+### Webcam-Einblendungen
+
+Alle ~1,5–3 Minuten wird für 5–10 Sekunden das Webcam-Bild eingeblendet. Der Start liegt immer auf einer
+Takt-Eins und die Dauer auf ganzen Takten. Rein und raus geht es per Block-Glitch und Datamosh. Das Bild ist
+gespiegelt, im Schwarz/Rot/Weiß-Look mit Scanlines und pumpt mit der Kick.
+Die Kamera wird nur ~4 Takte vorher eingeschaltet und danach wieder aus. Die Berechtigung wird beim Start
+abgefragt, damit kein Dialog mitten auf der Party auf dem Beamer aufpoppt.
 
 ### Szenen
 
@@ -53,7 +73,9 @@ Einstellungen (Strobe, Glitch, Latenz, Mikrofon …) werden im Browser gespeiche
 - **Windows-„Audioverbesserungen“ aus** (gleiche Seite, *Audioverbesserungen: Aus*). Die Rauschunterdrückung
   von Intel Smart Sound bügelt sonst Kicks platt.
 - **BPM-Anzeige prüfen:** Steht `SYNC`, ist alles gut. Bei falschem Tempo: `T` im Takt tippen, ggf. `L` zum Sperren.
-- **Bild zu spät/zu früh?** Mit `,` / `.` die Latenz verschieben, bis Kick und Bild zusammenpassen.
+- **Bild zu spät/zu früh?** `C` → SYNC-Fader schieben, bis die Beat-Lampe mit der Kick blinkt (oder `,` / `.`).
+- **Webcam:** Beim Start Kamera erlauben. Auf dem Mac braucht Chrome außerdem die Kamera-Freigabe in
+  *Systemeinstellungen → Datenschutz & Sicherheit → Kamera*. Keine Einblendungen gewünscht? `W`.
 - **Ruckelt es?** `R` auf Auto lassen (regelt selbst runter) oder fest auf 75 %/50 % stellen.
 - **Netzteil anstecken.** Integrierte GPUs takten im Akkubetrieb runter.
 - Display-Ruhezustand wird von der App blockiert, solange sie sichtbar ist.
@@ -103,7 +125,9 @@ Mikrofon ─▶ AudioWorklet (BandSplitter)  ── Kick-Band/Hi-Hat-Band-Energi
 |---|---|
 | `src/audio/dsp/` | Reine DSP-Logik ohne Browser-APIs, mit Vitest getestet |
 | `src/audio/` | Web-Audio-Anbindung, Demo-Beat, Spektrum |
-| `src/director/` | Musikalisches Timing der Effekte |
+| `src/director/` | Musikalisches Timing der Effekte und Webcam-Einblendungen (`CamShow`, getestet) |
+| `src/video/` | Webcam-Zugriff |
+| `src/ui/` | HUD, Toasts, Control-Panel |
 | `src/gfx/` | WebGL2-Renderer und Post-Shader |
 | `src/scenes/` | Szenen-Shader (`.frag`). Neue Szene = Datei anlegen + in `index.ts` eintragen |
 | `src/app/` | App-Loop, Tasten, Einstellungen, Auto-Auflösung |
@@ -117,7 +141,7 @@ Beat, ohne Erkennungsverzögerung.
 
 ### Bekannte Grenzen / Ideen
 
-- Bilder/Logos einblenden ist vorbereitet (Szenen-Shader), aber noch nicht eingebaut.
+- Feste Bilder/Logos einblenden ist noch nicht eingebaut (der Kamera-Pfad im Post-Shader wäre die Vorlage).
 - Taktanfang (Downbeat) wird nur an Drops neu ausgerichtet.
 - Nach einem Grafiktreiber-Absturz sperrt Chrome WebGL bis zum Browser-Neustart. Die App senkt danach
   vorsorglich die Auflösung.

@@ -3,7 +3,24 @@ import type { HopFrame } from './dsp/BandSplitter';
 import type { BeatTracker } from './dsp/BeatTracker';
 import { DisplayBeat } from './dsp/DisplayBeat';
 import type { KickEvent } from './dsp/KickDetector';
+import { ReactiveDelay } from './dsp/ReactiveDelay';
 import type { Spectrum } from './Spectrum';
+
+/**
+ * The picture runs this far ahead of the analysis at sync offset 0, covering the typical
+ * mic → detection → display chain on a laptop.
+ */
+const BASE_LEAD = 0.04;
+
+/** Values that are measured, not predicted — they can only be delayed, never advanced. */
+interface Reactive {
+  kickEnv: number;
+  bass: number;
+  mid: number;
+  high: number;
+  level: number;
+  drop: number;
+}
 
 /** Everything the visuals need to know about the music, sampled once per rendered frame. */
 export interface MusicFrame {
@@ -31,12 +48,14 @@ export interface MusicFrame {
 }
 
 export class MusicAnalyzer {
-  /** Seconds the visuals run ahead of the analysis, compensating mic + display latency. */
-  latency = 0.04;
+  /** Sync fader in seconds: positive = picture later, negative = picture earlier. */
+  syncOffset = 0;
   onKick: ((kick: KickEvent) => void) | null = null;
   onDrop: (() => void) | null = null;
 
   private readonly display = new DisplayBeat();
+  /** Covers the fader's maximum delay (+0.5 s) with some margin. */
+  private readonly history = new ReactiveDelay<Reactive>(0.8);
   private kickEnv = 0;
   private kickStrength = 1;
   private dropEnv = 0;
@@ -69,18 +88,31 @@ export class MusicAnalyzer {
 
   update(now: number, dt: number): MusicFrame {
     const clock = this.tracker.clock;
-    const beatTime = this.display.update(clock.beatAt(now + this.latency), clock.bpm, dt);
+    // How far ahead of the analysis the picture runs. The beat grid is a prediction, so it can be
+    // shifted both ways; reactive values can only be delayed (when lead < 0).
+    const lead = BASE_LEAD - this.syncOffset;
+    const beatTime = this.display.update(clock.beatAt(now + lead), clock.bpm, dt);
     const beat = beatTime - Math.floor(beatTime);
     const secondsPerBeat = 60 / clock.bpm;
 
     this.kickEnv *= Math.exp(-dt / (secondsPerBeat * 0.22));
     this.dropEnv *= Math.exp(-dt / (secondsPerBeat * 4));
     this.spectrum.update(dt);
+    const live: Reactive = {
+      kickEnv: this.kickEnv,
+      bass: this.spectrum.bass,
+      mid: this.spectrum.mid,
+      high: this.spectrum.high,
+      level: this.spectrum.level,
+      drop: this.dropEnv,
+    };
+    this.history.push(now, live);
+    const r = lead < 0 ? (this.history.at(now + lead) ?? live) : live;
 
-    const kicking = this.tracker.isKicking(now);
+    const kicking = this.tracker.isKicking(now + Math.min(0, lead));
     const locked = clock.locked;
     // Locked: pulse exactly on the predicted beat (no detection lag). Otherwise: react to kicks.
-    const kick = locked && kicking ? Math.exp(-beat * 5.5) * this.kickStrength : this.kickEnv;
+    const kick = locked && kicking ? Math.exp(-beat * 5.5) * this.kickStrength : r.kickEnv;
     const relBeat = Math.floor(beatTime) - clock.barOffset;
 
     return {
@@ -89,11 +121,11 @@ export class MusicAnalyzer {
       barTime: mod(relBeat, 4) + beat,
       bar: Math.floor(relBeat / 4),
       kick,
-      bass: this.spectrum.bass,
-      mid: this.spectrum.mid,
-      high: this.spectrum.high,
-      level: this.spectrum.level,
-      drop: this.dropEnv,
+      bass: r.bass,
+      mid: r.mid,
+      high: r.high,
+      level: r.level,
+      drop: r.drop,
       bpm: clock.bpm,
       locked,
       kicking,

@@ -6,12 +6,14 @@ import { Director, type GlitchLevel } from '../director/Director';
 import type { Renderer } from '../gfx/Renderer';
 import { SCENES } from '../scenes';
 import { hideIdleCursor, keepScreenAwake, toggleFullscreen } from '../system/browser';
+import { ControlPanel } from '../ui/ControlPanel';
 import { Hud, bar } from '../ui/Hud';
 import { Toast } from '../ui/Toast';
+import { Webcam } from '../video/Webcam';
 import { clamp, mod } from '../util/math';
 import { HELP, bindKeys } from './controls';
 import { ResolutionGovernor } from './ResolutionGovernor';
-import { RENDER_SCALES, saveSettings, type Settings } from './settings';
+import { RENDER_SCALES, SYNC_OFFSET_LIMIT, saveSettings, type Settings } from './settings';
 
 const GLITCH_NAMES = ['AUS', 'DOSIERT', 'HEFTIG'];
 
@@ -24,8 +26,11 @@ export class App {
   private readonly hud = new Hud(document.getElementById('hud')!);
   private readonly toast = new Toast(document.getElementById('toast')!);
   private readonly startedAt = performance.now();
+  private readonly webcam = new Webcam();
+  private readonly panel: ControlPanel;
   private sceneIndex: number;
   private lastFrame = 0;
+  private lastBeatTime = 0;
   private fps = 60;
 
   constructor(
@@ -36,7 +41,7 @@ export class App {
     this.tracker = new BeatTracker(engine.hopRate);
     this.tracker.kicks.sensitivity = settings.sensitivity;
     this.music = new MusicAnalyzer(this.tracker, new Spectrum(engine.analyser));
-    this.music.latency = settings.latencyMs / 1000;
+    this.music.syncOffset = settings.syncOffsetMs / 1000;
     this.music.onKick = (kick) => this.director.onKick(kick.strength);
     this.music.onDrop = () => this.director.triggerDrop();
     engine.onHop = (frame) => this.music.pushHop(frame);
@@ -47,6 +52,21 @@ export class App {
     this.director.autoScene = settings.autoScene;
     this.director.onAutoAdvance = () => this.nextScene(1);
     this.sceneIndex = clamp(settings.scene, 0, SCENES.length - 1);
+
+    const cam = this.director.cam;
+    cam.enabled = settings.webcam;
+    cam.onArm = () => {
+      this.webcam.open().catch(() => this.toast.show('WEBCAM NICHT VERFÜGBAR', 3000));
+    };
+    cam.onRelease = () => this.webcam.close();
+
+    this.panel = new ControlPanel({
+      onSyncOffset: (ms) => this.setSyncOffset(ms),
+      onWebcamEnabled: (enabled) => this.setWebcamEnabled(enabled),
+      onWebcamNow: () => this.toggleWebcamNow(),
+    });
+    this.panel.setSyncOffset(settings.syncOffsetMs);
+    this.panel.setWebcamEnabled(settings.webcam);
   }
 
   start(): void {
@@ -55,7 +75,9 @@ export class App {
     hideIdleCursor();
     window.addEventListener('dblclick', () => toggleFullscreen());
     requestAnimationFrame(this.frame);
-    this.toast.show('H = HILFE · F = VOLLBILD', 3500);
+    this.toast.show('H = HILFE · C = CONTROL · F = VOLLBILD', 3500);
+    // Get the camera permission prompt out of the way now, not on the projector mid-party.
+    if (this.settings.webcam) void this.setWebcamEnabled(true);
   }
 
   private readonly frame = (now: number): void => {
@@ -65,7 +87,9 @@ export class App {
     this.lastFrame = now;
 
     const m = this.music.update(this.engine.now(), dt);
-    const fx = this.director.update(m, dt);
+    this.lastBeatTime = m.beatTime;
+    const fx = this.director.update(m, dt, this.webcam.ready);
+    if (fx.camera > 0 && this.webcam.ready) this.renderer.updateCamera(this.webcam.video);
     const scale = this.settings.renderScale;
     this.renderer.layout();
     const vp = this.renderer.viewport;
@@ -90,6 +114,7 @@ export class App {
 
     if (rawDt > 0) this.fps += (1 / rawDt - this.fps) * 0.05;
     this.hud.update(now, () => this.hudText(m));
+    if (this.panel.visible) this.panel.update(m.beat, this.webcamStatus(m));
   };
 
   // ── Actions (bound to keys in controls.ts) ────────────────────────────────
@@ -121,11 +146,49 @@ export class App {
     this.toast.show(this.tracker.bpmLocked ? `BPM GESPERRT ${this.tracker.clock.bpm.toFixed(1)}` : 'BPM AUTOMATISCH');
   }
 
-  nudgeLatency(ms: number): void {
-    this.settings.latencyMs = clamp(this.settings.latencyMs + ms, -200, 300);
-    this.music.latency = this.settings.latencyMs / 1000;
+  /** Sync fader: positive = picture later, negative = picture earlier. */
+  setSyncOffset(ms: number): void {
+    this.settings.syncOffsetMs = clamp(Math.round(ms), -SYNC_OFFSET_LIMIT, SYNC_OFFSET_LIMIT);
+    this.music.syncOffset = this.settings.syncOffsetMs / 1000;
+    this.panel.setSyncOffset(this.settings.syncOffsetMs);
     this.persist();
-    this.toast.show(`LATENZ ${this.settings.latencyMs} MS`);
+  }
+
+  nudgeSyncOffset(ms: number): void {
+    this.setSyncOffset(this.settings.syncOffsetMs + ms);
+    this.toast.show(`SYNC ${formatOffset(this.settings.syncOffsetMs)}`);
+  }
+
+  toggleControlPanel(): void {
+    this.panel.toggle();
+  }
+
+  async setWebcamEnabled(enabled: boolean): Promise<void> {
+    if (enabled) {
+      try {
+        await Webcam.requestPermission();
+      } catch {
+        enabled = false;
+        this.toast.show('WEBCAM NICHT VERFÜGBAR / NICHT ERLAUBT', 4000);
+      }
+    }
+    this.settings.webcam = this.director.cam.enabled = enabled;
+    this.panel.setWebcamEnabled(enabled);
+    this.persist();
+  }
+
+  async toggleWebcamFeature(): Promise<void> {
+    await this.setWebcamEnabled(!this.settings.webcam);
+    this.toast.show(this.settings.webcam ? 'WEBCAM-EINBLENDUNGEN AN' : 'WEBCAM-EINBLENDUNGEN AUS');
+  }
+
+  /** Cut the webcam in right now (or out, if it is showing). */
+  toggleWebcamNow(): void {
+    if (!this.settings.webcam) {
+      this.toast.show('WEBCAM IST AUS — W DRÜCKEN');
+      return;
+    }
+    this.director.cam.toggleNow(this.lastBeatTime);
   }
 
   nudgeSensitivity(delta: number): void {
@@ -210,6 +273,16 @@ export class App {
     saveSettings(this.settings);
   }
 
+  private webcamStatus(m: MusicFrame): string {
+    const cam = this.director.cam;
+    if (!this.settings.webcam) return 'AUS';
+    if (cam.active) return 'LIVE';
+    if (cam.arming) return this.webcam.ready ? 'BEREIT' : 'KAMERA STARTET …';
+    const next = cam.nextStartBeat;
+    if (next === null) return '';
+    return `NÄCHSTE IN ~${Math.max(0, Math.round(((next - m.beatTime) * 60) / m.bpm))} s`;
+  }
+
   private renderScaleLabel(): string {
     const s = this.settings.renderScale;
     return s === 'auto' ? `AUTO (${Math.round(this.renderer.renderScale * 100)} %)` : `${Math.round(s * 100)} %`;
@@ -228,13 +301,18 @@ export class App {
       `HÖHEN    ${bar(m.high)}`,
       `EINGANG  ${m.inputDb.toFixed(0).padStart(4)} dBFS ${m.clipping ? ' ▲ CLIPPING — PEGEL RUNTER' : ''}`,
       `QUELLE   ${this.engine.inputLabel}`,
-      `LATENZ   ${this.settings.latencyMs} ms`,
+      `SYNC     ${formatOffset(this.settings.syncOffsetMs)} (+ = Bild später)`,
+      `WEBCAM   ${this.webcamStatus(m)}`,
       `RENDER   ${this.renderScaleLabel()} · ${r.internalWidth}×${r.internalHeight} · ${this.fps.toFixed(0)} fps`,
       `FX       STROBE ${this.settings.strobe ? 'AN' : 'AUS'} · GLITCH ${GLITCH_NAMES[this.settings.glitch]} · AUTO-SZENE ${this.settings.autoScene ? 'AN' : 'AUS'}`,
       '',
       HELP,
     ].join('\n');
   }
+}
+
+function formatOffset(ms: number): string {
+  return `${ms > 0 ? '+' : ''}${ms} ms`;
 }
 
 /** `?bpm=140` in the URL changes the demo tempo (for testing the tracker). */

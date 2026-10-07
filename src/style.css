@@ -127,6 +127,105 @@ body.cursor-hidden * {
   pointer-events: none;
 }
 
+#control {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: min(640px, calc(100vw - 32px));
+  padding: 14px 18px;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid #333;
+  border-top: 3px solid var(--red);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+#control[hidden] {
+  display: none;
+}
+
+#control .row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#control .row + .scale + .row {
+  margin-top: 14px;
+}
+
+#control label {
+  font-weight: 700;
+  min-width: 44px;
+}
+
+#control .check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+#control input[type='checkbox'] {
+  accent-color: var(--red);
+  width: 16px;
+  height: 16px;
+}
+
+#sync {
+  flex: 1;
+  accent-color: var(--red);
+}
+
+#sync-value {
+  min-width: 64px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#control button {
+  font: inherit;
+  font-weight: 700;
+  padding: 4px 10px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--fg);
+  cursor: pointer;
+}
+
+#control button:hover {
+  background: var(--red);
+  border-color: var(--red);
+}
+
+#beat-lamp {
+  width: 14px;
+  height: 14px;
+  background: var(--red);
+  opacity: 0;
+}
+
+#control .scale {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0 0 56px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+#cam-status {
+  color: var(--dim);
+}
+
+.webcam-source {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 #toast {
   position: fixed;
   right: 24px;

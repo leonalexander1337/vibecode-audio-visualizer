@@ -1,12 +1,47 @@
-// Post pass with feedback: glitch, red ghosting, datamosh, trails, strict B/W/red palette.
-// Its output is also next frame's uPrev.
+// Post pass with feedback: webcam cut-in, glitch, red ghosting, datamosh, trails,
+// strict B/W/red palette. Its output is also next frame's uPrev.
 
 uniform sampler2D uScene;
 uniform sampler2D uPrev;
-uniform float uGlitch;    // 0..1
-uniform float uMosh;      // 0..1, share of blocks that smear
+uniform sampler2D uCamTex;
+uniform float uGlitch;     // 0..1
+uniform float uMosh;       // 0..1, share of blocks that smear
 uniform float uMoshSeed;
-uniform float uFeedback;  // 0..1, trail strength
+uniform float uFeedback;   // 0..1, trail strength
+uniform float uCam;        // 0..1, how much of the webcam image is revealed
+uniform float uCamAspect;  // webcam width / height
+
+// Webcam: cover-fit into the frame, mirrored like a selfie, black → red → white tritone.
+vec3 camera(vec2 uv) {
+  vec2 p = uv - 0.5;
+  float frame = uRes.x / uRes.y;
+  if (uCamAspect > frame) p.x *= frame / uCamAspect;
+  else p.y *= uCamAspect / frame;
+  p *= 1.0 - 0.08 * uKick;
+  vec3 c = texture(uCamTex, vec2(0.5 - p.x, 0.5 - p.y)).rgb;
+
+  float l = smoothstep(0.08, 0.85, dot(c, LUMA));
+  l *= 0.88 + 0.12 * sin(uv.y * uRes.y * 1.4); // scanlines
+  vec3 tritone = mix(RED * smoothstep(0.0, 0.5, l), vec3(1.0), smoothstep(0.45, 1.0, l));
+  return mix(vec3(l), tritone, 0.45 + 0.55 * uKick);
+}
+
+// Revealed block by block in random order; blocks near the threshold flicker.
+float cameraMask(vec2 uv) {
+  if (uCam <= 0.0) return 0.0;
+  if (uCam >= 1.0) return 1.0;
+  vec2 cell = floor(uv * vec2(32.0, 18.0));
+  float order = hash21(cell + 17.0);
+  float flicker = step(0.5, hash21(cell + floor(uTime * 24.0)));
+  float edge = 0.18 * (1.0 - abs(2.0 * uCam - 1.0));
+  return order < uCam - edge ? 1.0 : (order < uCam + edge ? flicker : 0.0);
+}
+
+vec3 source(vec2 uv) {
+  vec3 scene = texture(uScene, uv).rgb;
+  float m = cameraMask(uv);
+  return m > 0.0 ? mix(scene, camera(uv), m) : scene;
+}
 
 void main() {
   vec2 uv = vUv;
@@ -28,11 +63,11 @@ void main() {
   }
   guv = fract(guv);
 
-  vec3 col = texture(uScene, guv).rgb;
+  vec3 col = source(guv);
 
   // Red ghost: luminance shifted sideways lands in the red channel only
   float split = 0.0015 + 0.01 * uKick + 0.03 * uGlitch;
-  col.r = max(col.r, dot(texture(uScene, guv + vec2(split, 0.0)).rgb, LUMA));
+  col.r = max(col.r, dot(source(guv + vec2(split, 0.0)), LUMA));
 
   // Datamosh: blocks keep dragging last frame's pixels along a fixed motion vector
   vec2 mgrid = uRes / 24.0;

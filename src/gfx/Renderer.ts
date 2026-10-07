@@ -51,6 +51,8 @@ export class Renderer {
   private sceneTarget: Target | null = null;
   private feedback: Target[] = [];
   private current = 0;
+  private cameraTex: WebGLTexture | null = null;
+  private cameraAspect = 16 / 9;
   /**
    * Halved after every lost context. On Windows a too-slow frame triggers a GPU reset (TDR);
    * rendering the same load again would just lose the context again.
@@ -84,6 +86,15 @@ export class Renderer {
     this.init();
   }
 
+  /** Uploads the current webcam frame. Only call while the camera is on screen. */
+  updateCamera(video: HTMLVideoElement): void {
+    const gl = this.gl;
+    if (gl.isContextLost() || video.videoWidth === 0) return;
+    gl.bindTexture(gl.TEXTURE_2D, this.cameraTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+    this.cameraAspect = video.videoWidth / video.videoHeight;
+  }
+
   render(sceneIndex: number, u: SceneUniforms, fx: FxFrame, feedbackAmount: number): void {
     const gl = this.gl;
     if (gl.isContextLost()) return;
@@ -110,12 +121,17 @@ export class Renderer {
     gl.bindTexture(gl.TEXTURE_2D, scene.tex);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, prev.tex);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.cameraTex);
     post.set1i('uScene', 0);
     post.set1i('uPrev', 1);
+    post.set1i('uCamTex', 2);
     post.set1f('uGlitch', fx.glitch);
     post.set1f('uMosh', fx.mosh);
     post.set1f('uMoshSeed', fx.moshSeed);
     post.set1f('uFeedback', feedbackAmount);
+    post.set1f('uCam', fx.camera);
+    post.set1f('uCamAspect', this.cameraAspect);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     this.current = 1 - this.current;
 
@@ -146,6 +162,12 @@ export class Renderer {
     this.postProgram = new Program(gl, vert, frag(postSource), 'post');
     this.outputProgram = new Program(gl, vert, frag(outputSource), 'output');
     this.vao = gl.createVertexArray();
+    this.cameraTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.cameraTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     // Old targets died with the context (if any) — force reallocation.
     this.sceneTarget = null;
     this.feedback = [];

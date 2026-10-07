@@ -1,5 +1,6 @@
 import type { MusicFrame } from '../audio/MusicAnalyzer';
 import { mod } from '../util/math';
+import { CamShow } from './CamShow';
 
 export interface FxFrame {
   glitch: number;
@@ -11,6 +12,8 @@ export interface FxFrame {
   /** Re-rolled every 8 bars; scenes derive their variation from it. */
   seed: number;
   variant: number;
+  /** Webcam reveal, 0..1. */
+  camera: number;
 }
 
 export type GlitchLevel = 0 | 1 | 2;
@@ -23,6 +26,7 @@ const GLITCH_GAIN: Record<GlitchLevel, number> = { 0: 0, 1: 1, 2: 1.8 };
  * - every 16 bars: 2-beat datamosh (50 %)
  * - drop / Space: strobe on the next 4 beats + glitch burst + datamosh
  * - every 8 bars: a half-beat inversion (35 %)
+ * - webcam cut-ins (see CamShow), glitching in and out — even with glitch set to off
  * Strobe flashes are beat-synced, so never more than ~3 per second.
  */
 export class Director {
@@ -31,10 +35,12 @@ export class Director {
   autoScene = false;
   blackout = false;
   onAutoAdvance: (() => void) | null = null;
+  readonly cam = new CamShow();
 
   private lastBeat: number | null = null;
   private beatTime = 0;
   private burst = 0;
+  private camBurst = 0;
   private glitchUntil = -1;
   private glitchAmount = 0;
   private moshUntil = -1;
@@ -45,16 +51,28 @@ export class Director {
   private seed = Math.random();
   private variant = 0;
 
-  update(m: MusicFrame, dt: number): FxFrame {
+  constructor() {
+    this.cam.onTransition = () => {
+      const beat = Math.floor(this.beatTime);
+      this.camBurst = 0.85;
+      this.moshUntil = beat + 1;
+      this.moshSeed = Math.random();
+    };
+  }
+
+  update(m: MusicFrame, dt: number, cameraReady: boolean): FxFrame {
     this.beatTime = m.beatTime;
     const beat = Math.floor(m.beatTime);
     if (this.lastBeat !== null && beat > this.lastBeat) this.onBeat(beat, m);
     this.lastBeat = beat;
+    const camera = this.cam.update(m.beatTime, Math.floor(m.barTime), m.bpm, cameraReady);
 
     this.burst = Math.max(0, this.burst - dt * 2.5);
+    this.camBurst = Math.max(0, this.camBurst - dt * 2);
     const scheduled = m.beatTime < this.glitchUntil ? this.glitchAmount : 0;
-    const glitch = Math.min(1, (this.burst + scheduled) * GLITCH_GAIN[this.glitchLevel]);
-    const mosh = this.glitchLevel > 0 && m.beatTime < this.moshUntil ? (this.glitchLevel === 2 ? 0.75 : 0.45) : 0;
+    const glitch = Math.min(1, (this.burst + scheduled) * GLITCH_GAIN[this.glitchLevel] + this.camBurst);
+    const moshing = m.beatTime < this.moshUntil && (this.glitchLevel > 0 || this.cam.active);
+    const mosh = moshing ? (this.glitchLevel === 2 ? 0.75 : 0.45) : 0;
     // Faster than 180 BPM only every other beat flashes (photosensitivity: stay ≤ 3 Hz).
     const flashBeat = m.bpm <= 180 || beat % 2 === 0;
     const strobe = this.strobeEnabled && flashBeat && m.beatTime < this.strobeUntil ? Math.exp(-m.beat * 14) * 0.9 : 0;
@@ -70,6 +88,7 @@ export class Director {
       blackout: this.blackoutLevel,
       seed: this.seed,
       variant: this.variant,
+      camera,
     };
   }
 

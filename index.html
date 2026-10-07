@@ -24,6 +24,23 @@
     </div>
 
     <pre id="hud" hidden></pre>
+
+    <div id="control" hidden>
+      <div class="row">
+        <label for="sync">SYNC</label>
+        <input id="sync" type="range" step="5" value="0" list="sync-ticks" />
+        <datalist id="sync-ticks"><option value="0"></option></datalist>
+        <output id="sync-value">0 ms</output>
+        <button id="sync-reset" title="Auf 0 ms zurücksetzen">0</button>
+        <span id="beat-lamp" title="Blinkt auf dem Beat, wie das Bild ihn sieht"></span>
+      </div>
+      <div class="scale"><span>← BILD FRÜHER</span><span>BILD SPÄTER →</span></div>
+      <div class="row">
+        <label class="check"><input id="cam-enabled" type="checkbox" /> WEBCAM</label>
+        <button id="cam-now">JETZT EIN/AUS</button>
+        <span id="cam-status"></span>
+      </div>
+    </div>
     <div id="toast"></div>
 
     <script type="module" src="/src/main.ts"></script>

@@ -13,8 +13,8 @@ const KEYMAP: Record<string, Action> = {
   f: (a) => a.toggleFullscreen(),
   t: (a) => a.tap(),
   l: (a) => a.toggleBpmLock(),
-  '.': (a) => a.nudgeLatency(10),
-  ',': (a) => a.nudgeLatency(-10),
+  '.': (a) => a.nudgeSyncOffset(10),
+  ',': (a) => a.nudgeSyncOffset(-10),
   '+': (a) => a.nudgeSensitivity(0.2),
   '=': (a) => a.nudgeSensitivity(0.2),
   '-': (a) => a.nudgeSensitivity(-0.2),
@@ -25,25 +25,39 @@ const KEYMAP: Record<string, Action> = {
   m: (a) => a.nextMicrophone(),
   d: (a) => a.toggleDemo(),
   b: (a) => a.toggleBlackout(),
+  c: (a) => a.toggleControlPanel(),
+  w: (a) => a.toggleWebcamFeature(),
+  v: (a) => a.toggleWebcamNow(),
   h: (a) => a.toggleHud(),
 };
+
+/** Keys that may auto-repeat while held. */
+const REPEATABLE = new Set(['ArrowLeft', 'ArrowRight', ',', '.']);
+/** Keys a focused slider/button/checkbox needs for itself. */
+const FORM_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', ' ', 'Enter']);
 
 export const HELP = `TASTEN
   1 2 3      Szene wählen          ← →    Szene vor/zurück
   LEER       FX-Burst (Drop)       B      Blackout
   T          Tap-Tempo             L      BPM sperren/freigeben
-  , .        Latenz −/+ 10 ms      + −    Kick empfindlicher/weniger
+  , .        Sync: Bild früher/später (10 ms)
+  + −        Kick empfindlicher/weniger
   S          Strobe an/aus         G      Glitch aus/dosiert/heftig
   R          Auflösung             A      Auto-Szenenwechsel
+  W          Webcam-Einblendungen  V      Webcam jetzt ein/aus
   M          nächstes Mikrofon     D      Demo-Beat an/aus
-  F          Vollbild              H      dieses Overlay`;
+  C          Control-Panel         F      Vollbild
+  H          dieses Overlay`;
 
 export function bindKeys(app: App): void {
   window.addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLButtonElement) {
+      if (FORM_KEYS.has(key)) return;
+    }
     const action = KEYMAP[key];
-    if (!action || (e.repeat && key !== 'ArrowLeft' && key !== 'ArrowRight')) return;
+    if (!action || (e.repeat && !REPEATABLE.has(key))) return;
     e.preventDefault();
     void action(app);
   });
