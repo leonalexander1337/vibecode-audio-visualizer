@@ -28,7 +28,8 @@ Ohne Mikrofon zum Ausprobieren: **DEMO-BEAT** (128 BPM, mit Breakdown und Drop a
 | `,` `.` | Sync: Bild früher/später (10 ms, halten geht) | `+` `-` | Kick empfindlicher/weniger |
 | `S` | Strobe an/aus | `G` | Glitch aus/dosiert/heftig |
 | `R` | Auflösung Auto/100/75/50 % | `A` | Auto-Szenenwechsel (alle 32 Takte) |
-| `W` | Webcam-Einblendungen an/aus | `V` | Webcam jetzt ein/aus |
+| `W` | Webcam-Einblendungen an/aus | `V` | Webcam ein (bleibt, bis nochmal `V`) / aus |
+| `Shift`+`V` | Webcam kurz einblenden (5–10 s) | | |
 | `M` | nächstes Mikrofon | `D` | Demo-Beat an/aus |
 | `C` | Control-Panel (Maus) | `H` | Overlay/Hilfe |
 | `F` / Doppelklick | Vollbild | | |
@@ -42,8 +43,9 @@ Einstellungen (Strobe, Glitch, Sync, Webcam, Mikrofon …) werden im Browser ges
   Lampe genau mit der Kick blinkt, die du hörst. `0` setzt zurück.
   - Typisch: Der Beamer hängt hinterher (30–100 ms), dann ins Minus schieben.
   - Bei Plus werden auch Bass/Pegel/Kick-Reaktionen verzögert, nicht nur das Beat-Raster.
-- **WEBCAM**: Einblendungen an/aus, **JETZT EIN/AUS** blendet sofort ein (oder aus). Der Status zeigt, wann die
-  nächste Einblendung kommt.
+- **WEBCAM**: Einblendungen an/aus. **EIN/AUS** blendet sofort ein und lässt das Bild drin, bis du nochmal
+  klickst (wie `V`). **KURZ** blendet für 5–10 s ein (wie `Shift`+`V`). Beide blenden eine laufende Einblendung aus.
+  Der Status zeigt, wann die nächste automatische Einblendung kommt.
 
 ### Webcam-Einblendungen
 

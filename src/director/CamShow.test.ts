@@ -84,22 +84,45 @@ describe('CamShow', () => {
   it('manual toggle cuts in on the next beat and out again', () => {
     const show = new CamShow();
     show.update(10.5, 2, 128, true);
-    show.toggleNow(10.5);
+    show.toggleNow(10.5, 'hold');
     const log = simulate(show, 128, 3, { from: 10.5 });
     expect(runs(log.shown)[0][0]).toBeCloseTo(11, 1);
     expect(show.active).toBe(true);
-    show.toggleNow(13.6);
+    show.toggleNow(13.6, 'hold');
     const after = simulate(show, 128, 3, { from: 13.6 });
     expect(show.active).toBe(false);
     expect(after.release).toHaveLength(1);
   });
 
+  it('hold stays on until toggled again', () => {
+    const show = new CamShow();
+    show.toggleNow(0.2, 'hold');
+    const log = simulate(show, 128, 4 * 100, { from: 0.2 });
+    expect(show.held).toBe(true);
+    expect(log.release).toHaveLength(0);
+    expect(runs(log.shown)).toHaveLength(1);
+    show.toggleNow(400.3, 'short');
+    simulate(show, 128, 3, { from: 400.3 });
+    expect(show.active).toBe(false);
+  });
+
+  it('short manual cut-in ends by itself after 5–10 s', () => {
+    const show = new CamShow();
+    show.toggleNow(0.2, 'short');
+    const log = simulate(show, 128, 4 * 10, { from: 0.2 });
+    const [start, end] = runs(log.shown)[0];
+    const seconds = ((end - start) * 60) / 128;
+    expect(seconds).toBeGreaterThan(4.8);
+    expect(seconds).toBeLessThan(10.2);
+    expect(show.active).toBe(false);
+  });
+
   it('fades out monotonically after a manual cut-out', () => {
     const show = new CamShow();
-    show.toggleNow(0.2);
+    show.toggleNow(0.2, 'hold');
     simulate(show, 128, 6, { from: 0.2 });
     expect(show.active).toBe(true);
-    show.toggleNow(6.3);
+    show.toggleNow(6.3, 'hold');
     const reveals: number[] = [];
     for (let bt = 6.3; bt < 10; bt += 128 / 60 / 60) reveals.push(show.update(bt, Math.floor(bt) % 4, 128, true));
     for (let i = 1; i < reveals.length; i++) expect(reveals[i]).toBeLessThanOrEqual(reveals[i - 1]);

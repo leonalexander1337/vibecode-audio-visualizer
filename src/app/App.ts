@@ -2,6 +2,7 @@ import type { AudioEngine } from '../audio/AudioEngine';
 import { BeatTracker } from '../audio/dsp/BeatTracker';
 import { MusicAnalyzer, type MusicFrame } from '../audio/MusicAnalyzer';
 import { Spectrum } from '../audio/Spectrum';
+import type { CutMode } from '../director/CamShow';
 import { Director, type GlitchLevel } from '../director/Director';
 import type { Renderer } from '../gfx/Renderer';
 import { SCENES } from '../scenes';
@@ -63,7 +64,7 @@ export class App {
     this.panel = new ControlPanel({
       onSyncOffset: (ms) => this.setSyncOffset(ms),
       onWebcamEnabled: (enabled) => this.setWebcamEnabled(enabled),
-      onWebcamNow: () => this.toggleWebcamNow(),
+      onWebcamNow: (mode) => this.toggleWebcamNow(mode),
     });
     this.panel.setSyncOffset(settings.syncOffsetMs);
     this.panel.setWebcamEnabled(settings.webcam);
@@ -182,13 +183,15 @@ export class App {
     this.toast.show(this.settings.webcam ? 'WEBCAM-EINBLENDUNGEN AN' : 'WEBCAM-EINBLENDUNGEN AUS');
   }
 
-  /** Cut the webcam in right now (or out, if it is showing). */
-  toggleWebcamNow(): void {
+  /** Cut the webcam in right now (or out, if it is showing). `hold` = until toggled again, `short` = 5–10 s. */
+  toggleWebcamNow(mode: CutMode): void {
     if (!this.settings.webcam) {
       this.toast.show('WEBCAM IST AUS — W DRÜCKEN');
       return;
     }
-    this.director.cam.toggleNow(this.lastBeatTime);
+    const cam = this.director.cam;
+    if (!cam.active) this.toast.show(mode === 'hold' ? 'WEBCAM AN — V ZUM AUSBLENDEN' : 'WEBCAM KURZ (5–10 S)', 2000);
+    cam.toggleNow(this.lastBeatTime, mode);
   }
 
   nudgeSensitivity(delta: number): void {
@@ -276,6 +279,7 @@ export class App {
   private webcamStatus(m: MusicFrame): string {
     const cam = this.director.cam;
     if (!this.settings.webcam) return 'AUS';
+    if (cam.held) return 'LIVE · GEHALTEN (V = AUS)';
     if (cam.active) return 'LIVE';
     if (cam.arming) return this.webcam.ready ? 'BEREIT' : 'KAMERA STARTET …';
     const next = cam.nextStartBeat;

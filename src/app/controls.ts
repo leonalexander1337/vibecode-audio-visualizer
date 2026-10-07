@@ -1,6 +1,6 @@
 import type { App } from './App';
 
-type Action = (app: App) => void | Promise<void>;
+type Action = (app: App, e: KeyboardEvent) => void | Promise<void>;
 
 /** Keys as reported by `KeyboardEvent.key` (letters lower-cased). Chosen to work on German and US layouts. */
 const KEYMAP: Record<string, Action> = {
@@ -27,7 +27,7 @@ const KEYMAP: Record<string, Action> = {
   b: (a) => a.toggleBlackout(),
   c: (a) => a.toggleControlPanel(),
   w: (a) => a.toggleWebcamFeature(),
-  v: (a) => a.toggleWebcamNow(),
+  v: (a, e) => a.toggleWebcamNow(e.shiftKey ? 'short' : 'hold'),
   h: (a) => a.toggleHud(),
 };
 
@@ -44,7 +44,8 @@ export const HELP = `TASTEN
   + −        Kick empfindlicher/weniger
   S          Strobe an/aus         G      Glitch aus/dosiert/heftig
   R          Auflösung             A      Auto-Szenenwechsel
-  W          Webcam-Einblendungen  V      Webcam jetzt ein/aus
+  W          Webcam-Einblendungen an/aus
+  V          Webcam ein (bleibt) / aus      SHIFT+V  Webcam kurz (5–10 s)
   M          nächstes Mikrofon     D      Demo-Beat an/aus
   C          Control-Panel         F      Vollbild
   H          dieses Overlay`;
@@ -59,6 +60,6 @@ export function bindKeys(app: App): void {
     const action = KEYMAP[key];
     if (!action || (e.repeat && !REPEATABLE.has(key))) return;
     e.preventDefault();
-    void action(app);
+    void action(app, e);
   });
 }

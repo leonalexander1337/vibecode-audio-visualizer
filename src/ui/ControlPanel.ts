@@ -1,9 +1,10 @@
 import { SYNC_OFFSET_LIMIT } from '../app/settings';
+import type { CutMode } from '../director/CamShow';
 
 export interface ControlPanelHandlers {
   onSyncOffset(ms: number): void;
   onWebcamEnabled(enabled: boolean): void;
-  onWebcamNow(): void;
+  onWebcamNow(mode: CutMode): void;
 }
 
 /**
@@ -32,7 +33,8 @@ export class ControlPanel {
     this.sync.addEventListener('input', () => handlers.onSyncOffset(Number(this.sync.value)));
     byId('sync-reset').addEventListener('click', () => handlers.onSyncOffset(0));
     this.camEnabled.addEventListener('change', () => handlers.onWebcamEnabled(this.camEnabled.checked));
-    byId('cam-now').addEventListener('click', () => handlers.onWebcamNow());
+    byId('cam-hold').addEventListener('click', () => handlers.onWebcamNow('hold'));
+    byId('cam-short').addEventListener('click', () => handlers.onWebcamNow('short'));
     // Double-clicks here are for the controls, not for fullscreen.
     this.el.addEventListener('dblclick', (e) => e.stopPropagation());
   }

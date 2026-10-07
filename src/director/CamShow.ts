@@ -6,6 +6,8 @@ const MIN_SECONDS = 5;
 const MAX_SECONDS = 10;
 
 type Phase = 'idle' | 'arming' | 'in' | 'on' | 'out';
+/** Manual cut-in: stay until toggled off, or a regular 5–10 s one. */
+export type CutMode = 'hold' | 'short';
 
 /**
  * Schedules the occasional webcam cut-in on the musical grid:
@@ -28,7 +30,9 @@ export class CamShow {
   private start = 0;
   private end = 0;
   private lastBeat: number | null = null;
-  private manual = false;
+  /** Set when the cut-in was requested by hand. */
+  private manual: CutMode | null = null;
+  private holding = false;
   private readonly random: () => number;
 
   constructor(random: () => number = Math.random) {
@@ -48,13 +52,21 @@ export class CamShow {
     return this.nextStart;
   }
 
-  /** Cut in now (at the next beat, as soon as the camera is ready) — or cut out if already showing. */
-  toggleNow(beatTime: number): void {
+  /** Showing a cut-in that stays until it is toggled off. */
+  get held(): boolean {
+    return this.active && this.holding;
+  }
+
+  /**
+   * Cut in now (at the next beat, as soon as the camera is ready) — or cut out if already showing.
+   * `hold`: stay until toggled again; `short`: a regular 5–10 s cut-in.
+   */
+  toggleNow(beatTime: number, mode: CutMode): void {
     if (this.active) {
       if (this.phase !== 'out') this.end = Math.floor(beatTime) + 2;
       return;
     }
-    this.manual = true;
+    this.manual = mode;
     this.nextStart = Math.floor(beatTime) + 1;
     if (this.phase === 'idle') this.arm();
   }
@@ -79,10 +91,11 @@ export class CamShow {
         if (beatTime >= this.nextStart - PREROLL_BEATS) this.arm();
         break;
       case 'arming': {
-        const onGrid = this.manual || barBeat === 0;
+        const onGrid = this.manual !== null || barBeat === 0;
         if (newBeat && onGrid && beatTime >= this.nextStart && cameraReady) {
+          this.holding = this.manual === 'hold';
           this.start = beat;
-          this.end = beat + this.durationBeats(bpm);
+          this.end = this.holding ? Infinity : beat + this.durationBeats(bpm);
           this.phase = 'in';
           this.onTransition?.();
         } else if (beatTime > this.nextStart + READY_TIMEOUT_BEATS) {
@@ -126,7 +139,8 @@ export class CamShow {
 
   private finish(beat: number, scheduleNext: boolean): void {
     this.phase = 'idle';
-    this.manual = false;
+    this.manual = null;
+    this.holding = false;
     this.onRelease?.();
     this.nextStart = scheduleNext ? beat + this.bars(40, 80) * 4 : null;
   }
