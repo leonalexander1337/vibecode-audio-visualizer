@@ -1,0 +1,147 @@
+:root {
+  --red: #ff0a14;
+  --fg: #f2f2f2;
+  --dim: #8a8a8a;
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: var(--fg);
+  font-family: var(--mono);
+}
+
+body.cursor-hidden,
+body.cursor-hidden * {
+  cursor: none !important;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#start {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 16px;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 4px),
+    #000;
+  text-align: center;
+}
+
+#start[hidden] {
+  display: none;
+}
+
+#start h1 {
+  margin: 0;
+  font-size: clamp(28px, 6vw, 72px);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+#start h1 span {
+  color: var(--red);
+  margin: 0 0.15em;
+}
+
+#start .actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+}
+
+#start button {
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 16px 32px;
+  color: #000;
+  background: var(--fg);
+  border: 2px solid var(--fg);
+  cursor: pointer;
+}
+
+#start button:hover,
+#start button:focus-visible {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+  outline: none;
+}
+
+#start button.secondary {
+  color: var(--fg);
+  background: transparent;
+}
+
+#start button:disabled {
+  opacity: 0.4;
+  cursor: wait;
+}
+
+#start-error {
+  min-height: 1.4em;
+  max-width: 640px;
+  margin: 0;
+  color: var(--red);
+}
+
+#start .hint {
+  margin: 0;
+  color: var(--dim);
+  font-size: 14px;
+}
+
+#hud {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  margin: 0;
+  padding: 14px 16px;
+  background: rgba(0, 0, 0, 0.78);
+  border-left: 3px solid var(--red);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre;
+  pointer-events: none;
+}
+
+#toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  padding: 10px 16px;
+  background: #000;
+  border: 1px solid var(--red);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+}
+
+#toast.visible {
+  opacity: 1;
+}

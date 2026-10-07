@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="description" content="Audio-reaktiver Techno-Visualizer fürs Mikrofon" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <title>Vibecode Visualizer</title>
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+
+    <div id="start">
+      <h1>VIBECODE<span>//</span>VISUALIZER</h1>
+      <div class="actions">
+        <button id="btn-mic">START · MIKROFON</button>
+        <button id="btn-demo" class="secondary">DEMO-BEAT</button>
+      </div>
+      <p id="start-error" role="alert"></p>
+      <p class="hint">Chrome empfohlen · F = Vollbild · H = Hilfe</p>
+    </div>
+
+    <pre id="hud" hidden></pre>
+    <div id="toast"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
