@@ -12,8 +12,12 @@ export interface FxFrame {
   /** Re-rolled every 8 bars; scenes derive their variation from it. */
   seed: number;
   variant: number;
-  /** Webcam reveal, 0..1. */
+  /** How much the webcam owns the picture, 0..1. */
   camera: number;
+  /** Datamosh transition towards the webcam (`in`) or back to the visuals (`out`). */
+  camTransition: 'in' | 'out' | null;
+  /** 0..1 within that transition. */
+  camProgress: number;
 }
 
 export type GlitchLevel = 0 | 1 | 2;
@@ -26,7 +30,7 @@ const GLITCH_GAIN: Record<GlitchLevel, number> = { 0: 0, 1: 1, 2: 1.8 };
  * - every 16 bars: 2-beat datamosh (50 %)
  * - drop / Space: strobe on the next 4 beats + glitch burst + datamosh
  * - every 8 bars: a half-beat inversion (35 %)
- * - webcam cut-ins (see CamShow), glitching in and out — even with glitch set to off
+ * - webcam cut-ins (see CamShow): one-bar datamosh transitions in and out, with a short glitch kick
  * Strobe flashes are beat-synced, so never more than ~3 per second.
  */
 export class Director {
@@ -52,11 +56,9 @@ export class Director {
   private variant = 0;
 
   constructor() {
+    // The datamosh itself is the transition; a short glitch just marks its start.
     this.cam.onTransition = () => {
-      const beat = Math.floor(this.beatTime);
-      this.camBurst = 0.85;
-      this.moshUntil = beat + 1;
-      this.moshSeed = Math.random();
+      this.camBurst = 0.4;
     };
   }
 
@@ -65,13 +67,15 @@ export class Director {
     const beat = Math.floor(m.beatTime);
     if (this.lastBeat !== null && beat > this.lastBeat) this.onBeat(beat, m);
     this.lastBeat = beat;
-    const camera = this.cam.update(m.beatTime, Math.floor(m.barTime), m.bpm, cameraReady);
+    const cam = this.cam.update(m.beatTime, Math.floor(m.barTime), m.bpm, cameraReady);
 
     this.burst = Math.max(0, this.burst - dt * 2.5);
     this.camBurst = Math.max(0, this.camBurst - dt * 2);
     const scheduled = m.beatTime < this.glitchUntil ? this.glitchAmount : 0;
-    const glitch = Math.min(1, (this.burst + scheduled) * GLITCH_GAIN[this.glitchLevel] + this.camBurst);
-    const moshing = m.beatTime < this.moshUntil && (this.glitchLevel > 0 || this.cam.active);
+    // Regular glitches would tear up the datamosh transition — keep them out of it.
+    const regular = cam.transition ? 0 : (this.burst + scheduled) * GLITCH_GAIN[this.glitchLevel];
+    const glitch = Math.min(1, regular + this.camBurst);
+    const moshing = this.glitchLevel > 0 && m.beatTime < this.moshUntil;
     const mosh = moshing ? (this.glitchLevel === 2 ? 0.75 : 0.45) : 0;
     // Faster than 180 BPM only every other beat flashes (photosensitivity: stay ≤ 3 Hz).
     const flashBeat = m.bpm <= 180 || beat % 2 === 0;
@@ -88,7 +92,9 @@ export class Director {
       blackout: this.blackoutLevel,
       seed: this.seed,
       variant: this.variant,
-      camera,
+      camera: cam.weight,
+      camTransition: cam.transition,
+      camProgress: cam.progress,
     };
   }
 

@@ -1,46 +1,79 @@
-// Post pass with feedback: webcam cut-in, glitch, red ghosting, datamosh, trails,
-// strict B/W/red palette. Its output is also next frame's uPrev.
+// Post pass with feedback: webcam composite and datamosh transitions, glitch, red ghosting,
+// datamosh bursts, trails, B/W/red palette for the visuals. Its output is also next frame's uPrev.
 
 uniform sampler2D uScene;
 uniform sampler2D uPrev;
-uniform sampler2D uCamTex;
-uniform float uGlitch;     // 0..1
-uniform float uMosh;       // 0..1, share of blocks that smear
+uniform sampler2D uMotion;      // per-macroblock motion of the transition target (motion.frag)
+uniform sampler2D uTargetLuma;  // low-res luminance of the transition target (luma.frag)
+uniform float uGlitch;          // 0..1
+uniform float uMosh;            // 0..1, share of blocks that smear
 uniform float uMoshSeed;
-uniform float uFeedback;   // 0..1, trail strength
-uniform float uCam;        // 0..1, how much of the webcam image is revealed
-uniform float uCamAspect;  // webcam width / height
+uniform float uFeedback;        // 0..1, trail strength
+uniform float uCam;             // 0..1, how much the webcam owns the picture (also frees its colours)
+uniform float uTrans;           // 1 while a webcam datamosh transition runs
+uniform float uTransTarget;     // 1 = towards the webcam, 0 = back to the visuals
+uniform float uProgress;        // 0..1 within the transition
 
-// Webcam: cover-fit into the frame, mirrored like a selfie, black → red → white tritone.
-vec3 camera(vec2 uv) {
-  vec2 p = uv - 0.5;
-  float frame = uRes.x / uRes.y;
-  if (uCamAspect > frame) p.x *= frame / uCamAspect;
-  else p.y *= uCamAspect / frame;
-  p *= 1.0 - 0.08 * uKick;
-  vec3 c = texture(uCamTex, vec2(0.5 - p.x, 0.5 - p.y)).rgb;
+const vec2 MOTION_RES = vec2(32.0, 18.0);
+const vec2 LUMA_RES = vec2(128.0, 72.0);
 
-  float l = smoothstep(0.08, 0.85, dot(c, LUMA));
-  l *= 0.88 + 0.12 * sin(uv.y * uRes.y * 1.4); // scanlines
-  vec3 tritone = mix(RED * smoothstep(0.0, 0.5, l), vec3(1.0), smoothstep(0.45, 1.0, l));
-  return mix(vec3(l), tritone, 0.45 + 0.55 * uKick);
+vec3 hueRotate(vec3 c, float a) {
+  const vec3 k = vec3(0.57735);
+  float ca = cos(a);
+  return c * ca + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - ca);
 }
 
-// Revealed block by block in random order; blocks near the threshold flicker.
-float cameraMask(vec2 uv) {
-  if (uCam <= 0.0) return 0.0;
-  if (uCam >= 1.0) return 1.0;
-  vec2 cell = floor(uv * vec2(32.0, 18.0));
-  float order = hash21(cell + 17.0);
-  float flicker = step(0.5, hash21(cell + floor(uTime * 24.0)));
-  float edge = 0.18 * (1.0 - abs(2.0 * uCam - 1.0));
-  return order < uCam - edge ? 1.0 : (order < uCam + edge ? flicker : 0.0);
+// Trippy webcam look: complementary colours, solarised highlights, hue cycling with the beat,
+// coarse colour steps. Dark stays dark, so a dark room stays a dark picture.
+vec3 cameraLook(vec2 uv) {
+  vec3 c = camExposed(uv);
+  float l = dot(c, LUMA);
+  vec3 chroma = (l - c) * 2.4;
+  float folded = l < 0.5 ? 2.0 * l : 2.0 - 2.0 * l;
+  vec3 col = clamp(vec3(mix(l, folded, 0.5)) + chroma, 0.0, 1.0);
+  col = hueRotate(col, beatAngle(32.0) + uKick * 0.8);
+  // Coarse colour steps; rounding down keeps near-black black.
+  col = floor(clamp(col, 0.0, 1.0) * 4.99) / 4.0;
+  col *= 0.85 + 0.15 * sin(uv.y * uRes.y * 1.4);
+  return col;
 }
 
-vec3 source(vec2 uv) {
-  vec3 scene = texture(uScene, uv).rgb;
-  float m = cameraMask(uv);
-  return m > 0.0 ? mix(scene, camera(uv), m) : scene;
+vec3 transitionTarget(vec2 uv) {
+  return uTransTarget > 0.5 ? cameraLook(uv) : texture(uScene, uv).rgb;
+}
+
+// Datamosh transition: the old picture (uPrev) is never refreshed, it only gets dragged along the
+// new content's motion vectors and up its brightness gradient, and survives only inside the new
+// content's bright shapes — so the visuals pull into the shape of a face (and back out into the
+// cube). Then the new picture's edges bleed in like P-frame residue, finally the whole picture.
+vec3 moshTransition(vec2 uv) {
+  vec2 cell = (floor(uv * MOTION_RES) + 0.5) / MOTION_RES;
+  vec2 offset = (texture(uMotion, cell).rg - 0.5) * 6.0 / LUMA_RES;
+
+  vec2 px = 2.0 / LUMA_RES;
+  float tl = texture(uTargetLuma, uv).r;
+  vec2 grad = vec2(
+    texture(uTargetLuma, uv + vec2(px.x, 0.0)).r - texture(uTargetLuma, uv - vec2(px.x, 0.0)).r,
+    texture(uTargetLuma, uv + vec2(0.0, px.y)).r - texture(uTargetLuma, uv - vec2(0.0, px.y)).r);
+
+  float p = uProgress;
+  vec3 col = texture(uPrev, uv + offset * 1.6 - grad * 0.012).rgb;
+
+  // Fade the old picture where the target is dark. Only a little per frame — it compounds, and
+  // the old picture should linger long enough to visibly take on the target's shape.
+  float shape = smoothstep(0.04, 0.4, tl);
+  col *= mix(1.0, shape, 0.05 * smoothstep(0.0, 0.3, p));
+
+  vec3 target = transitionTarget(uv);
+  float edge = clamp(length(grad) * 5.0, 0.0, 1.0);
+  col = max(col, target * edge * smoothstep(0.15, 0.6, p));
+  return mix(col, target, smoothstep(0.6, 1.0, p));
+}
+
+vec3 palette(vec3 col) {
+  float l = dot(col, LUMA);
+  float redness = clamp(col.r - max(col.g, col.b), 0.0, 1.0);
+  return mix(vec3(l), RED * col.r, redness);
 }
 
 void main() {
@@ -63,28 +96,30 @@ void main() {
   }
   guv = fract(guv);
 
-  vec3 col = source(guv);
+  vec3 col;
+  if (uTrans > 0.5) {
+    col = moshTransition(guv);
+  } else {
+    col = texture(uScene, guv).rgb;
+    // Red ghost: luminance shifted sideways lands in the red channel only
+    float split = 0.0015 + 0.01 * uKick + 0.03 * uGlitch;
+    col.r = max(col.r, dot(texture(uScene, guv + vec2(split, 0.0)).rgb, LUMA));
+    if (uCam > 0.0) col = mix(col, cameraLook(guv), uCam);
 
-  // Red ghost: luminance shifted sideways lands in the red channel only
-  float split = 0.0015 + 0.01 * uKick + 0.03 * uGlitch;
-  col.r = max(col.r, dot(source(guv + vec2(split, 0.0)), LUMA));
+    // Datamosh bursts: blocks keep dragging last frame's pixels along a fixed motion vector
+    vec2 mgrid = uRes / 24.0;
+    vec2 mb = floor(uv * mgrid);
+    float moshing = step(1.0 - uMosh, hash21(mb * 0.73 + uMoshSeed * 101.0));
+    vec2 flow = vec2(cos(uMoshSeed * TAU), sin(uMoshSeed * TAU)) * 0.25;
+    vec2 mv = (vec2(hash21(mb + uMoshSeed * 13.0), hash21(mb.yx + uMoshSeed * 29.0)) - 0.5) * 0.6 + flow;
+    col = mix(col, texture(uPrev, uv - mv / mgrid).rgb, moshing * 0.97);
 
-  // Datamosh: blocks keep dragging last frame's pixels along a fixed motion vector
-  vec2 mgrid = uRes / 24.0;
-  vec2 mb = floor(uv * mgrid);
-  float moshing = step(1.0 - uMosh, hash21(mb * 0.73 + uMoshSeed * 101.0));
-  vec2 flow = vec2(cos(uMoshSeed * TAU), sin(uMoshSeed * TAU)) * 0.25;
-  vec2 mv = (vec2(hash21(mb + uMoshSeed * 13.0), hash21(mb.yx + uMoshSeed * 29.0)) - 0.5) * 0.6 + flow;
-  vec3 prev = texture(uPrev, uv - mv / mgrid).rgb;
-  col = mix(col, prev, moshing * 0.97);
+    // Trails
+    col = max(col, texture(uPrev, uv).rgb * uFeedback);
+  }
 
-  // Trails
-  col = max(col, texture(uPrev, uv).rgb * uFeedback);
-
-  // Strict palette: everything that is not clearly red becomes grey
-  float l = dot(col, LUMA);
-  float redness = clamp(col.r - max(col.g, col.b), 0.0, 1.0);
-  col = mix(vec3(l), RED * col.r, redness);
+  // The visuals stay strictly black/white/red; the webcam may keep its colours.
+  col = mix(palette(col), col, uCam);
 
   fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }

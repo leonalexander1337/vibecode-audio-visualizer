@@ -20,8 +20,8 @@ function simulate(show: CamShow, bpm: number, beats: number, opts: { cameraReady
   const end = beatTime + beats;
   for (; beatTime < end; beatTime += step) {
     const ready = opts.cameraReady?.(beatTime) ?? true;
-    const reveal = show.update(beatTime, Math.floor(beatTime) % 4, bpm, ready);
-    if (reveal > 0) log.shown.push([beatTime, reveal]);
+    const { weight } = show.update(beatTime, Math.floor(beatTime) % 4, bpm, ready);
+    if (weight > 0) log.shown.push([beatTime, weight]);
   }
   return log;
 }
@@ -89,7 +89,8 @@ describe('CamShow', () => {
     expect(runs(log.shown)[0][0]).toBeCloseTo(11, 1);
     expect(show.active).toBe(true);
     show.toggleNow(13.6, 'hold');
-    const after = simulate(show, 128, 3, { from: 13.6 });
+    // Transition in runs until beat 15, transition out takes another bar.
+    const after = simulate(show, 128, 6, { from: 13.6 });
     expect(show.active).toBe(false);
     expect(after.release).toHaveLength(1);
   });
@@ -102,8 +103,31 @@ describe('CamShow', () => {
     expect(log.release).toHaveLength(0);
     expect(runs(log.shown)).toHaveLength(1);
     show.toggleNow(400.3, 'short');
-    simulate(show, 128, 3, { from: 400.3 });
+    simulate(show, 128, 6, { from: 400.3 });
     expect(show.active).toBe(false);
+  });
+
+  it('transitions in and out over one bar each with rising progress', () => {
+    const show = new CamShow();
+    show.toggleNow(0.2, 'short');
+    const phases: string[] = [];
+    let lastProgress = -1;
+    let lastPhase: string | null = null;
+    for (let bt = 0.2; bt < 30; bt += 128 / 60 / 60) {
+      const f = show.update(bt, Math.floor(bt) % 4, 128, true);
+      const phase = f.transition ?? (f.weight > 0 ? 'on' : 'off');
+      if (phase !== lastPhase) {
+        phases.push(phase);
+        lastProgress = -1;
+      }
+      if (f.transition) {
+        expect(f.progress).toBeGreaterThanOrEqual(lastProgress);
+        lastProgress = f.progress;
+        expect(f.weight).toBeCloseTo(f.transition === 'in' ? f.progress : 1 - f.progress, 6);
+      }
+      lastPhase = phase;
+    }
+    expect(phases).toEqual(['off', 'in', 'on', 'out', 'off']);
   });
 
   it('short manual cut-in ends by itself after 5–10 s', () => {
@@ -124,7 +148,7 @@ describe('CamShow', () => {
     expect(show.active).toBe(true);
     show.toggleNow(6.3, 'hold');
     const reveals: number[] = [];
-    for (let bt = 6.3; bt < 10; bt += 128 / 60 / 60) reveals.push(show.update(bt, Math.floor(bt) % 4, 128, true));
+    for (let bt = 6.3; bt < 12; bt += 128 / 60 / 60) reveals.push(show.update(bt, Math.floor(bt) % 4, 128, true).weight);
     for (let i = 1; i < reveals.length; i++) expect(reveals[i]).toBeLessThanOrEqual(reveals[i - 1]);
     expect(reveals[reveals.length - 1]).toBe(0);
   });

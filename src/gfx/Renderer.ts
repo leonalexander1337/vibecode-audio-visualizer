@@ -1,7 +1,10 @@
 import type { FxFrame } from '../director/Director';
 import { Program, createTarget, deleteTarget, type Target } from './gl';
+import cameraSource from './shaders/camera.glsl?raw';
 import commonSource from './shaders/common.glsl?raw';
 import vertexSource from './shaders/fullscreen.vert?raw';
+import lumaSource from './shaders/luma.frag?raw';
+import motionSource from './shaders/motion.frag?raw';
 import outputSource from './shaders/output.frag?raw';
 import postSource from './shaders/post.frag?raw';
 
@@ -29,11 +32,17 @@ export interface SceneUniforms {
 
 const ASPECT = 16 / 9;
 const VERSION = '#version 300 es\n';
+/** Must match LUMA_RES / MOTION_RES in post.frag (motion blocks are 4×4 luma pixels). */
+const LUMA_SIZE = [128, 72] as const;
+const MOTION_SIZE = [32, 18] as const;
 
 /**
- * Three passes per frame:
+ * Passes per frame:
  *   1. scene  → sceneTarget              (at renderScale × viewport size)
- *   2. post   → feedback[next]           (reads scene + feedback[prev]: glitch, datamosh, trails)
+ *   (during a webcam transition)
+ *      luma   → luma[cur]                (128×72 luminance of the transition target)
+ *      motion → motionTarget             (32×18 block-matching vectors, luma[cur] vs luma[prev])
+ *   2. post   → feedback[next]           (scene/webcam + feedback[prev]: datamosh, glitch, trails)
  *   3. output → canvas, 16:9 letterboxed (strobe, invert, grain, blackout)
  */
 export class Renderer {
@@ -47,12 +56,19 @@ export class Renderer {
   private scenePrograms: Program[] = [];
   private postProgram!: Program;
   private outputProgram!: Program;
+  private lumaProgram!: Program;
+  private motionProgram!: Program;
   private vao: WebGLVertexArrayObject | null = null;
   private sceneTarget: Target | null = null;
   private feedback: Target[] = [];
   private current = 0;
   private cameraTex: WebGLTexture | null = null;
   private cameraAspect = 16 / 9;
+  private luma: Target[] = [];
+  private lumaCurrent = 0;
+  private motionTarget: Target | null = null;
+  /** Transition target the luma history belongs to; null = history is stale. */
+  private lumaTarget: number | null = null;
   /**
    * Halved after every lost context. On Windows a too-slow frame triggers a GPU reset (TDR);
    * rendering the same load again would just lose the context again.
@@ -92,6 +108,8 @@ export class Renderer {
     if (gl.isContextLost() || video.videoWidth === 0) return;
     gl.bindTexture(gl.TEXTURE_2D, this.cameraTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+    // The smallest mip is the mean brightness → auto exposure in camera.glsl.
+    gl.generateMipmap(gl.TEXTURE_2D);
     this.cameraAspect = video.videoWidth / video.videoHeight;
   }
 
@@ -112,26 +130,34 @@ export class Renderer {
     this.setShared(sceneProgram, u, fx, scene.width, scene.height);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
+    if (fx.camTransition) this.estimateMotion(u, fx, scene);
+    else this.lumaTarget = null;
+
     // 2. Post with feedback
     gl.bindFramebuffer(gl.FRAMEBUFFER, next.fbo);
+    gl.viewport(0, 0, next.width, next.height);
     const post = this.postProgram;
     post.use();
     this.setShared(post, u, fx, next.width, next.height);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, scene.tex);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, prev.tex);
-    gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, this.cameraTex);
+    this.bindTexture(0, scene.tex);
+    this.bindTexture(1, prev.tex);
+    this.bindTexture(2, this.cameraTex);
+    this.bindTexture(3, this.motionTarget!.tex);
+    this.bindTexture(4, this.luma[this.lumaCurrent].tex);
     post.set1i('uScene', 0);
     post.set1i('uPrev', 1);
     post.set1i('uCamTex', 2);
+    post.set1i('uMotion', 3);
+    post.set1i('uTargetLuma', 4);
     post.set1f('uGlitch', fx.glitch);
     post.set1f('uMosh', fx.mosh);
     post.set1f('uMoshSeed', fx.moshSeed);
     post.set1f('uFeedback', feedbackAmount);
     post.set1f('uCam', fx.camera);
     post.set1f('uCamAspect', this.cameraAspect);
+    post.set1f('uTrans', fx.camTransition ? 1 : 0);
+    post.set1f('uTransTarget', fx.camTransition === 'in' ? 1 : 0);
+    post.set1f('uProgress', fx.camProgress);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     this.current = 1 - this.current;
 
@@ -154,20 +180,77 @@ export class Renderer {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
+  /**
+   * Luminance of the transition target (webcam on the way in, visuals on the way out) and its
+   * block motion against the previous frame. The first frame after a target switch has no
+   * history yet, so both luma buffers get the same frame (= zero motion).
+   */
+  private estimateMotion(u: SceneUniforms, fx: FxFrame, scene: Target): void {
+    const gl = this.gl;
+    const target = fx.camTransition === 'in' ? 1 : 0;
+    const fresh = this.lumaTarget !== target;
+    this.lumaTarget = target;
+
+    const luma = this.lumaProgram;
+    luma.use();
+    this.setShared(luma, u, fx, LUMA_SIZE[0], LUMA_SIZE[1]);
+    this.bindTexture(0, scene.tex);
+    this.bindTexture(2, this.cameraTex);
+    luma.set1i('uScene', 0);
+    luma.set1i('uCamTex', 2);
+    luma.set1f('uCamAspect', this.cameraAspect);
+    luma.set1f('uTransTarget', target);
+    gl.viewport(0, 0, LUMA_SIZE[0], LUMA_SIZE[1]);
+    this.lumaCurrent = 1 - this.lumaCurrent;
+    for (const t of fresh ? this.luma : [this.luma[this.lumaCurrent]]) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+
+    const motion = this.motionProgram;
+    motion.use();
+    this.bindTexture(0, this.luma[this.lumaCurrent].tex);
+    this.bindTexture(1, this.luma[1 - this.lumaCurrent].tex);
+    motion.set1i('uLumaCur', 0);
+    motion.set1i('uLumaPrev', 1);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.motionTarget!.fbo);
+    gl.viewport(0, 0, MOTION_SIZE[0], MOTION_SIZE[1]);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  private bindTexture(unit: number, tex: WebGLTexture | null): void {
+    this.gl.activeTexture(this.gl.TEXTURE0 + unit);
+    this.gl.bindTexture(this.gl.TEXTURE_2D, tex);
+  }
+
   private init(): void {
     const gl = this.gl;
     const vert = VERSION + vertexSource;
-    const frag = (body: string) => `${VERSION}${commonSource}\n${body}`;
+    const frag = (...parts: string[]) => `${VERSION}${commonSource}\n${parts.join('\n')}`;
     this.scenePrograms = this.scenes.map((s) => new Program(gl, vert, frag(s.fragment), s.name));
-    this.postProgram = new Program(gl, vert, frag(postSource), 'post');
+    this.postProgram = new Program(gl, vert, frag(cameraSource, postSource), 'post');
     this.outputProgram = new Program(gl, vert, frag(outputSource), 'output');
+    this.lumaProgram = new Program(gl, vert, frag(cameraSource, lumaSource), 'luma');
+    this.motionProgram = new Program(gl, vert, frag(motionSource), 'motion');
     this.vao = gl.createVertexArray();
+
     this.cameraTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.cameraTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.generateMipmap(gl.TEXTURE_2D);
+
+    this.luma = [createTarget(gl, ...LUMA_SIZE), createTarget(gl, ...LUMA_SIZE)];
+    this.motionTarget = createTarget(gl, ...MOTION_SIZE, gl.NEAREST);
+    // Neutral motion (0.5, 0.5) until the first estimate.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.motionTarget.fbo);
+    gl.clearColor(0.5, 0.5, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.lumaTarget = null;
+
     // Old targets died with the context (if any) — force reallocation.
     this.sceneTarget = null;
     this.feedback = [];

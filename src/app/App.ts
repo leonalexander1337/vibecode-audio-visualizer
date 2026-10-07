@@ -90,7 +90,7 @@ export class App {
     const m = this.music.update(this.engine.now(), dt);
     this.lastBeatTime = m.beatTime;
     const fx = this.director.update(m, dt, this.webcam.ready);
-    if (fx.camera > 0 && this.webcam.ready) this.renderer.updateCamera(this.webcam.video);
+    if ((fx.camera > 0 || fx.camTransition) && this.webcam.ready) this.renderer.updateCamera(this.webcam.video);
     const scale = this.settings.renderScale;
     this.renderer.layout();
     const vp = this.renderer.viewport;

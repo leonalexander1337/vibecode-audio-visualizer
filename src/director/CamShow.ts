@@ -2,6 +2,10 @@
 const PREROLL_BEATS = 16;
 /** Give up on a cut-in if the camera is still not ready this long after its planned start. */
 const READY_TIMEOUT_BEATS = 32;
+/** Each datamosh transition (in and out) lasts one bar. */
+export const TRANSITION_BEATS = 4;
+/** Shortest cut-in: transition in, one bar of camera, transition out. */
+const MIN_BARS = 3;
 const MIN_SECONDS = 5;
 const MAX_SECONDS = 10;
 
@@ -9,10 +13,21 @@ type Phase = 'idle' | 'arming' | 'in' | 'on' | 'out';
 /** Manual cut-in: stay until toggled off, or a regular 5–10 s one. */
 export type CutMode = 'hold' | 'short';
 
+export interface CamFrame {
+  /** How much the webcam owns the picture, 0..1 (rises during the transition in, falls during the one out). */
+  weight: number;
+  /** Datamosh transition in progress: towards the webcam (`in`) or back to the visuals (`out`). */
+  transition: 'in' | 'out' | null;
+  /** 0..1 within the transition. */
+  progress: number;
+}
+
+const IDLE: CamFrame = { weight: 0, transition: null, progress: 0 };
+
 /**
  * Schedules the occasional webcam cut-in on the musical grid:
  * every 40–80 bars (first one after 24–48), lasting whole bars totalling 5–10 s.
- * The cut-in starts on a downbeat; the first and the last beat are glitch transitions.
+ * The cut-in starts on a downbeat; its first and last bar are datamosh transitions.
  *
  * Pure logic — the App wires the callbacks to the real camera and the effects.
  */
@@ -22,7 +37,7 @@ export class CamShow {
   onArm: (() => void) | null = null;
   /** Switch the camera off. */
   onRelease: (() => void) | null = null;
-  /** Start of a transition in or out — time for a glitch burst. */
+  /** Start of a transition in or out. */
   onTransition: (() => void) | null = null;
 
   private phase: Phase = 'idle';
@@ -63,7 +78,8 @@ export class CamShow {
    */
   toggleNow(beatTime: number, mode: CutMode): void {
     if (this.active) {
-      if (this.phase !== 'out') this.end = Math.floor(beatTime) + 2;
+      // Start the transition out on the next beat (or right after the transition in).
+      if (this.phase !== 'out') this.end = Math.max(Math.floor(beatTime) + 1, this.start + TRANSITION_BEATS) + TRANSITION_BEATS;
       return;
     }
     this.manual = mode;
@@ -71,18 +87,15 @@ export class CamShow {
     if (this.phase === 'idle') this.arm();
   }
 
-  /**
-   * Call every frame. `barBeat` is the beat index within the bar (0 = downbeat).
-   * Returns how far the camera image is revealed, 0..1.
-   */
-  update(beatTime: number, barBeat: number, bpm: number, cameraReady: boolean): number {
+  /** Call every frame. `barBeat` is the beat index within the bar (0 = downbeat). */
+  update(beatTime: number, barBeat: number, bpm: number, cameraReady: boolean): CamFrame {
     const beat = Math.floor(beatTime);
     const newBeat = this.lastBeat !== null && beat !== this.lastBeat;
     this.lastBeat = beat;
 
     if (!this.enabled) {
       if (this.phase !== 'idle') this.finish(beat, false);
-      return 0;
+      return IDLE;
     }
     this.nextStart ??= beat + this.bars(24, 48) * 4;
 
@@ -104,10 +117,10 @@ export class CamShow {
         break;
       }
       case 'in':
-        if (beatTime >= this.start + 1) this.phase = 'on';
+        if (beatTime >= this.start + TRANSITION_BEATS) this.phase = 'on';
         break;
       case 'on':
-        if (beatTime >= this.end - 1) {
+        if (beatTime >= this.end - TRANSITION_BEATS) {
           this.phase = 'out';
           this.onTransition?.();
         }
@@ -116,19 +129,23 @@ export class CamShow {
         if (beatTime >= this.end) this.finish(beat, true);
         break;
     }
-    return this.reveal(beatTime);
+    return this.frame(beatTime);
   }
 
-  private reveal(beatTime: number): number {
+  private frame(beatTime: number): CamFrame {
     switch (this.phase) {
-      case 'in':
-        return clamp01(beatTime - this.start);
+      case 'in': {
+        const progress = clamp01((beatTime - this.start) / TRANSITION_BEATS);
+        return { weight: progress, transition: 'in', progress };
+      }
       case 'on':
-        return 1;
-      case 'out':
-        return clamp01(this.end - beatTime);
+        return { weight: 1, transition: null, progress: 0 };
+      case 'out': {
+        const progress = clamp01(1 - (this.end - beatTime) / TRANSITION_BEATS);
+        return { weight: 1 - progress, transition: 'out', progress };
+      }
       default:
-        return 0;
+        return IDLE;
     }
   }
 
@@ -145,11 +162,11 @@ export class CamShow {
     this.nextStart = scheduleNext ? beat + this.bars(40, 80) * 4 : null;
   }
 
-  /** Whole bars, as close as possible to a random length of 5–10 s. */
+  /** Whole bars, as close as possible to a random length of 5–10 s (at least 3 bars). */
   private durationBeats(bpm: number): number {
     const seconds = MIN_SECONDS + this.random() * (MAX_SECONDS - MIN_SECONDS);
     const barSeconds = (4 * 60) / bpm;
-    const minBars = Math.ceil(MIN_SECONDS / barSeconds);
+    const minBars = Math.max(MIN_BARS, Math.ceil(MIN_SECONDS / barSeconds));
     const maxBars = Math.max(minBars, Math.floor(MAX_SECONDS / barSeconds));
     return Math.min(maxBars, Math.max(minBars, Math.round(seconds / barSeconds))) * 4;
   }

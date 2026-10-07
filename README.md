@@ -50,8 +50,22 @@ Einstellungen (Strobe, Glitch, Sync, Webcam, Mikrofon …) werden im Browser ges
 ### Webcam-Einblendungen
 
 Alle ~1,5–3 Minuten wird für 5–10 Sekunden das Webcam-Bild eingeblendet. Der Start liegt immer auf einer
-Takt-Eins und die Dauer auf ganzen Takten. Rein und raus geht es per Block-Glitch und Datamosh. Das Bild ist
-gespiegelt, im Schwarz/Rot/Weiß-Look mit Scanlines und pumpt mit der Kick.
+Takt-Eins und die Dauer auf ganzen Takten.
+
+**Datamosh-Übergänge (je 1 Takt):** Wie bei einem Video ohne Keyframes wird das alte Bild nicht ersetzt,
+sondern von der Bewegung des neuen mitgerissen. Die Bewegung wird per Block-Matching (wie ein Videocodec,
+in Makroblöcken) live geschätzt.
+- **Rein:** Die Visuals reiten auf der Kamera-Bewegung, gleiten zu den hellen Formen und verblassen im Dunkeln.
+  Der Würfel zieht sich so in die Form von Gesicht und Person. Dann bluten die Kanten ein, am Ende ist das Kamerabild voll da.
+- **Raus:** umgekehrt. Das Gesicht wird von der Bewegung der Visuals mitgerissen und zieht sich in deren Formen.
+
+Es gibt keine echte Gesichtserkennung: Im dunklen Raum ist die Person der hellste Bereich, das reicht für den Effekt.
+
+**Look:** gespiegelt, komplementäre (invertierte) Farben, solarisiert, Farbton rotiert im Beat, grob posterisiert,
+pumpt mit der Kick. Die Szenen bleiben schwarz/weiß/rot, nur die Webcam darf bunt sein.
+**Dunkler Raum:** automatische Belichtung über die mittlere Bildhelligkeit, Sensorrauschen wird vor der Verstärkung
+abgeschnitten (dunkel bleibt schwarz), Bewegung zählt erst über einer Rauschschwelle.
+
 Die Kamera wird nur ~4 Takte vorher eingeschaltet und danach wieder aus. Die Berechtigung wird beim Start
 abgefragt, damit kein Dialog mitten auf der Party auf dem Beamer aufpoppt.
 
