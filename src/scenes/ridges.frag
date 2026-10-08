@@ -2,7 +2,7 @@
 // rolls towards you, one ridge per beat; its peaks sit off-centre, wander, and swell with the bass.
 // Some ridges glow red.
 
-const int ROWS = 36;
+const int ROWS = 40;
 
 float noise1(float x) {
   float i = floor(x);
@@ -12,7 +12,8 @@ float noise1(float x) {
 }
 
 float ridgeHeight(float x, float row) {
-  float centre = 0.25 * sin(row * 0.41 + uSeed * 6.0) + 0.1 * sin(row * 0.13);
+  // Peak position wanders across most of the width — never mirrored, rarely centred.
+  float centre = 0.4 * sin(row * 0.41 + uSeed * 6.0) + 0.15 * sin(row * 0.13);
   float envelope = exp(-pow((x - centre) * 2.2, 2.0)) * 0.9 + 0.1;
   float n = 0.0;
   float amp = 0.6;
@@ -27,11 +28,13 @@ float ridgeHeight(float x, float row) {
 
 void main() {
   vec2 uv = centeredUv();
-  float spacing = 0.78 / float(ROWS);
+  // Fill the whole 16:9 frame: lines run edge to edge, the rows span the full height.
+  float halfWidth = 0.5 * uRes.x / uRes.y;
+  float spacing = 1.0 / float(ROWS - 2);
   float roll = fract(uBeatTime);
   float base = floor(uBeatTime);
   float px = 1.5 / uRes.y;
-  float inside = smoothstep(0.62, 0.57, abs(uv.x));
+  float flatEdges = smoothstep(halfWidth, halfWidth - 0.15, abs(uv.x)); // peaks calm down at the edges
   float amp = 0.1 + 0.22 * uBass + 0.12 * uKick;
 
   // Back to front: every ridge blacks out what lies below it, then draws its own line.
@@ -39,10 +42,10 @@ void main() {
   for (int i = 0; i < ROWS; i++) {
     float fi = float(i) + roll;
     float id = float(i) - base; // a ridge keeps its shape while it rolls forward
-    float curve = 0.4 - fi * spacing + ridgeHeight(uv.x, id) * amp * inside;
+    float curve = 0.5 - (fi - 0.5) * spacing + ridgeHeight(uv.x, id) * amp * flatEdges;
     float fade = smoothstep(0.0, 2.0, fi) * smoothstep(float(ROWS), float(ROWS) - 3.0, fi);
     if (uv.y < curve) col = vec3(0.0);
-    float line = smoothstep(px * 1.5, 0.0, abs(uv.y - curve)) * fade * step(abs(uv.x), 0.62);
+    float line = smoothstep(px * 1.5, 0.0, abs(uv.y - curve)) * fade;
     vec3 ink = hash11(id * 3.17 + floor(uSeed * 40.0)) > 0.93 ? RED * 1.3 : vec3(1.0);
     col = max(col, ink * line);
   }
