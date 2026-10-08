@@ -1,5 +1,6 @@
 import type { FxFrame } from '../director/Director';
 import { Program, createTarget, deleteTarget, type Target } from './gl';
+import { PALETTES, paletteColors, type PaletteColors } from './palettes';
 import cameraSource from './shaders/camera.glsl?raw';
 import commonSource from './shaders/common.glsl?raw';
 import vertexSource from './shaders/fullscreen.vert?raw';
@@ -43,11 +44,13 @@ const MOTION_SIZE = [32, 18] as const;
  *      luma   → luma[cur]                (128×72 luminance of the transition target)
  *      motion → motionTarget             (32×18 block-matching vectors, luma[cur] vs luma[prev])
  *   2. post   → feedback[next]           (scene/webcam + feedback[prev]: datamosh, glitch, trails)
- *   3. output → canvas, 16:9 letterboxed (strobe, invert, grain, blackout)
+ *   3. output → canvas, 16:9 letterboxed (strobe, invert, palette, grain, blackout)
  */
 export class Renderer {
   /** Fraction of the native viewport resolution the scene is rendered at. */
   renderScale = 1;
+  /** Colours the black/white/red picture is mapped to in the output pass. */
+  palette: PaletteColors = paletteColors(PALETTES[0]);
   viewport = { x: 0, y: 0, width: 1, height: 1 };
   internalWidth = 0;
   internalHeight = 0;
@@ -177,6 +180,10 @@ export class Renderer {
     out.set1f('uStrobe', fx.strobe);
     out.set1f('uInvert', fx.invert);
     out.set1f('uBlackout', fx.blackout);
+    out.set1f('uCam', fx.camera);
+    out.set3f('uBg', this.palette.bg);
+    out.set3f('uFg', this.palette.fg);
+    out.set3f('uAccent', this.palette.accent);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 

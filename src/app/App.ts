@@ -4,6 +4,7 @@ import { MusicAnalyzer, type MusicFrame } from '../audio/MusicAnalyzer';
 import { Spectrum } from '../audio/Spectrum';
 import type { CutMode } from '../director/CamShow';
 import { Director, type GlitchLevel } from '../director/Director';
+import { PALETTES, blendColors, paletteColors, type PaletteColors } from '../gfx/palettes';
 import type { Renderer } from '../gfx/Renderer';
 import { SCENES } from '../scenes';
 import { hideIdleCursor, keepScreenAwake, toggleFullscreen } from '../system/browser';
@@ -11,7 +12,7 @@ import { ControlPanel } from '../ui/ControlPanel';
 import { Hud, bar } from '../ui/Hud';
 import { Toast } from '../ui/Toast';
 import { Webcam } from '../video/Webcam';
-import { clamp, mod } from '../util/math';
+import { clamp, mod, smoothing } from '../util/math';
 import { HELP, bindKeys } from './controls';
 import { ResolutionGovernor } from './ResolutionGovernor';
 import { RENDER_SCALES, SYNC_OFFSET_LIMIT, saveSettings, type Settings } from './settings';
@@ -33,6 +34,7 @@ export class App {
   private lastFrame = 0;
   private lastBeatTime = 0;
   private fps = 60;
+  private paletteTarget: PaletteColors = paletteColors(PALETTES[0]);
 
   constructor(
     private readonly engine: AudioEngine,
@@ -65,9 +67,14 @@ export class App {
       onSyncOffset: (ms) => this.setSyncOffset(ms),
       onWebcamEnabled: (enabled) => this.setWebcamEnabled(enabled),
       onWebcamNow: (mode) => this.toggleWebcamNow(mode),
+      onPalette: (index) => this.setPalette(index),
     });
     this.panel.setSyncOffset(settings.syncOffsetMs);
     this.panel.setWebcamEnabled(settings.webcam);
+
+    settings.palette = clamp(settings.palette, 0, PALETTES.length - 1);
+    this.renderer.palette = paletteColors(PALETTES[settings.palette]);
+    this.applyPaletteToUi();
   }
 
   start(): void {
@@ -91,6 +98,7 @@ export class App {
     this.lastBeatTime = m.beatTime;
     const fx = this.director.update(m, dt, this.webcam.ready);
     if ((fx.camera > 0 || fx.camTransition) && this.webcam.ready) this.renderer.updateCamera(this.webcam.video);
+    blendColors(this.renderer.palette, this.paletteTarget, smoothing(dt, 0.12));
     const scale = this.settings.renderScale;
     this.renderer.layout();
     const vp = this.renderer.viewport;
@@ -131,6 +139,26 @@ export class App {
 
   nextScene(step: number): void {
     this.setScene(mod(this.sceneIndex + step, SCENES.length));
+  }
+
+  setPalette(index: number): void {
+    this.settings.palette = mod(index, PALETTES.length);
+    this.director.sceneChanged();
+    this.applyPaletteToUi();
+    this.persist();
+    this.toast.show(`FARBE ${this.settings.palette + 1} · ${PALETTES[this.settings.palette].name}`);
+  }
+
+  cyclePalette(step: number): void {
+    this.setPalette(this.settings.palette + step);
+  }
+
+  /** Palette target for the renderer (blended towards per frame) and the UI accent colour. */
+  private applyPaletteToUi(): void {
+    const p = PALETTES[this.settings.palette];
+    this.paletteTarget = paletteColors(p);
+    document.documentElement.style.setProperty('--red', p.accent);
+    this.panel.setPalette(this.settings.palette);
   }
 
   burst(): void {
@@ -309,6 +337,7 @@ export class App {
       `WEBCAM   ${this.webcamStatus(m)}`,
       `RENDER   ${this.renderScaleLabel()} · ${r.internalWidth}×${r.internalHeight} · ${this.fps.toFixed(0)} fps`,
       `FX       STROBE ${this.settings.strobe ? 'AN' : 'AUS'} · GLITCH ${GLITCH_NAMES[this.settings.glitch]} · AUTO-SZENE ${this.settings.autoScene ? 'AN' : 'AUS'}`,
+      `FARBE    ${this.settings.palette + 1}/${PALETTES.length} ${PALETTES[this.settings.palette].name}`,
       '',
       HELP,
     ].join('\n');

@@ -1,14 +1,16 @@
 import { SYNC_OFFSET_LIMIT } from '../app/settings';
 import type { CutMode } from '../director/CamShow';
+import { PALETTES } from '../gfx/palettes';
 
 export interface ControlPanelHandlers {
   onSyncOffset(ms: number): void;
   onWebcamEnabled(enabled: boolean): void;
   onWebcamNow(mode: CutMode): void;
+  onPalette(index: number): void;
 }
 
 /**
- * Mouse-operated panel (toggle with C): sync fader and webcam controls.
+ * Mouse-operated panel (toggle with C): sync fader, colour palettes and webcam controls.
  * The beat lamp flashes on the beat as the *picture* sees it — move the fader until it
  * flashes together with the kick you hear.
  */
@@ -19,6 +21,7 @@ export class ControlPanel {
   private readonly lamp: HTMLElement;
   private readonly camEnabled: HTMLInputElement;
   private readonly camStatus: HTMLElement;
+  private readonly paletteButtons: HTMLButtonElement[];
 
   constructor(handlers: ControlPanelHandlers) {
     this.el = byId('control');
@@ -35,6 +38,17 @@ export class ControlPanel {
     this.camEnabled.addEventListener('change', () => handlers.onWebcamEnabled(this.camEnabled.checked));
     byId('cam-hold').addEventListener('click', () => handlers.onWebcamNow('hold'));
     byId('cam-short').addEventListener('click', () => handlers.onWebcamNow('short'));
+
+    // One swatch button per palette: background, foreground and accent side by side.
+    this.paletteButtons = PALETTES.map((p, i) => {
+      const button = document.createElement('button');
+      button.className = 'swatch';
+      button.title = `${p.name} (P)`;
+      button.style.background = `linear-gradient(90deg, ${p.bg} 0 33%, ${p.fg} 33% 66%, ${p.accent} 66%)`;
+      button.addEventListener('click', () => handlers.onPalette(i));
+      return button;
+    });
+    byId('palettes').append(...this.paletteButtons);
     // Double-clicks here are for the controls, not for fullscreen.
     this.el.addEventListener('dblclick', (e) => e.stopPropagation());
   }
@@ -54,6 +68,11 @@ export class ControlPanel {
 
   setWebcamEnabled(enabled: boolean): void {
     this.camEnabled.checked = enabled;
+  }
+
+  setPalette(index: number): void {
+    this.paletteButtons.forEach((b, i) => b.classList.toggle('active', i === index));
+    byId('palette-name').textContent = PALETTES[index].name;
   }
 
   /** Per frame while visible. */

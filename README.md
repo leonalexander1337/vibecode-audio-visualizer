@@ -22,7 +22,8 @@ Ohne Mikrofon zum Ausprobieren: **DEMO-BEAT** (128 BPM, mit Breakdown und Drop a
 
 | Taste | Funktion | Taste | Funktion |
 |---|---|---|---|
-| `1` `2` `3` | Szene wählen | `←` `→` | Szene vor/zurück |
+| `1` … `6` | Szene wählen | `←` `→` | Szene vor/zurück |
+| `P` | nächste Farbpalette | `Shift`+`P` | vorherige Farbpalette |
 | `Leertaste` | FX-Burst (manueller Drop) | `B` | Blackout |
 | `T` | Tap-Tempo (≥ 3× tippen) | `L` | BPM sperren/freigeben |
 | `,` `.` | Sync: Bild früher/später (10 ms, halten geht) | `+` `-` | Kick empfindlicher/weniger |
@@ -74,6 +75,26 @@ abgefragt, damit kein Dialog mitten auf der Party auf dem Beamer aufpoppt.
 1. **MONOLITH**: Flug durch einen Korridor rotierender Rahmen, pro Beat ein Rahmen. Säulen wachsen mit dem Bass.
 2. **KALEIDO**: Kaleidoskop über einem Kaliset-Fraktal. Segmentzahl und Drift wechseln alle 8 Takte, Ringe auf jedem Beat.
 3. **FRACTAL**: 3D-KIFS-Fraktal (Raymarching) mit rot wandernden Adern. Abwechselnd Orbit und Flug ganz nah ran.
+4. **MERCURY**: flüssiges Chrom. Sechs Metall-Blobs treiben im Beat, schmelzen ineinander und reißen wieder
+   auseinander. Die Kick bläht sie auf, die Höhen kräuseln die Oberfläche.
+5. **SPLIT**: asymmetrisches Raster im Stil Schweizer Plakate. Rekursiv in ungleiche Blöcke zerschnitten, die großen
+   Schnitte wechseln jeden Takt, die kleinen jeden Beat. Jeder Block hat sein eigenes Muster, einige brennen rot.
+6. **RIDGES**: gestapelte Kammlinien à la „Unknown Pleasures“. Die Landschaft rollt eine Linie pro Beat auf dich zu,
+   die Gipfel sitzen außermittig und wachsen mit dem Bass.
+
+### Farbpaletten (`P`)
+
+| | Schwarz → | Weiß → | Rot → |
+|---|---|---|---|
+| **BLUT** | Schwarz | Weiß | Rot |
+| **ACID** | Schwarz | Grünweiß | Säuregrün |
+| **UV** | Tiefviolett | Lavendel | Magenta |
+| **GLUT** | Schwarz | Bernstein | Orange-Rot |
+| **EIS** | Nachtblau | Eisweiß | Kobaltblau |
+
+Die Szenen rendern intern weiter schwarz/weiß/rot, erst der letzte Pass färbt um. Wechsel werden kurz überblendet,
+die Webcam behält ihre eigenen Farben. Die Palette lässt sich auch im Control-Panel (`C`) per Farbfeld wählen.
+Neue Paletten: `src/gfx/palettes.ts`.
 
 Über allen Szenen liegen Glitch, Datamosh, Strobe und Invert. Sie sind dosiert und auf Takte und Drops getimt
 (siehe `src/director/Director.ts`). Strobe blitzt nie öfter als ~3× pro Sekunde.

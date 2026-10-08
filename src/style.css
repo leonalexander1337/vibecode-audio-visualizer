@@ -151,8 +151,30 @@ body.cursor-hidden * {
   gap: 12px;
 }
 
-#control .row + .scale + .row {
+#control .row + .scale + .row,
+#control .row + .row {
   margin-top: 14px;
+}
+
+#palettes {
+  display: flex;
+  gap: 8px;
+}
+
+#control .swatch {
+  width: 42px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid #444;
+}
+
+#control .swatch.active {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
+#palette-name {
+  color: var(--dim);
 }
 
 #control label {

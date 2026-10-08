@@ -19,6 +19,8 @@ export interface Settings {
   micId: string | null;
   /** Occasional webcam cut-ins. */
   webcam: boolean;
+  /** Index into PALETTES. */
+  palette: number;
 }
 
 const DEFAULTS: Settings = {
@@ -31,6 +33,7 @@ const DEFAULTS: Settings = {
   autoScene: false,
   micId: null,
   webcam: true,
+  palette: 0,
 };
 
 const KEY = 'vibecode-visualizer:settings';

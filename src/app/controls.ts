@@ -4,9 +4,8 @@ type Action = (app: App, e: KeyboardEvent) => void | Promise<void>;
 
 /** Keys as reported by `KeyboardEvent.key` (letters lower-cased). Chosen to work on German and US layouts. */
 const KEYMAP: Record<string, Action> = {
-  '1': (a) => a.setScene(0),
-  '2': (a) => a.setScene(1),
-  '3': (a) => a.setScene(2),
+  // 1–9: scenes (setScene ignores numbers without a scene)
+  ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [String(i + 1), (a: App) => a.setScene(i)])),
   ArrowRight: (a) => a.nextScene(1),
   ArrowLeft: (a) => a.nextScene(-1),
   ' ': (a) => a.burst(),
@@ -28,6 +27,7 @@ const KEYMAP: Record<string, Action> = {
   c: (a) => a.toggleControlPanel(),
   w: (a) => a.toggleWebcamFeature(),
   v: (a, e) => a.toggleWebcamNow(e.shiftKey ? 'short' : 'hold'),
+  p: (a, e) => a.cyclePalette(e.shiftKey ? -1 : 1),
   h: (a) => a.toggleHud(),
 };
 
@@ -37,7 +37,8 @@ const REPEATABLE = new Set(['ArrowLeft', 'ArrowRight', ',', '.']);
 const FORM_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', ' ', 'Enter']);
 
 export const HELP = `TASTEN
-  1 2 3      Szene wählen          ← →    Szene vor/zurück
+  1 – 6      Szene wählen          ← →    Szene vor/zurück
+  P          nächste Farbpalette   SHIFT+P  vorherige
   LEER       FX-Burst (Drop)       B      Blackout
   T          Tap-Tempo             L      BPM sperren/freigeben
   , .        Sync: Bild früher/später (10 ms)

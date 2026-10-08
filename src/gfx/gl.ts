@@ -34,6 +34,10 @@ export class Program {
     this.gl.uniform2f(this.location(name), x, y);
   }
 
+  set3f(name: string, v: readonly [number, number, number]): void {
+    this.gl.uniform3f(this.location(name), v[0], v[1], v[2]);
+  }
+
   set1i(name: string, v: number): void {
     this.gl.uniform1i(this.location(name), v);
   }
